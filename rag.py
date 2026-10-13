@@ -10,14 +10,14 @@ import os
 load_dotenv()
 
 def process_pdf(file_path: str, doc_type: str):
-    """
-    Loads a PDF and adds a metadata tag ('policy' or 'resume') 
-    so retrieval doesn't mix candidate data with company policy.
-    """
+    """Loads a PDF and adds metadata tags ('policy' or 'resume')."""
+    if not os.path.exists(file_path):
+        print(f"Warning: {file_path} not found.")
+        return []
+        
     loader = PyPDFLoader(file_path)
     documents = loader.load()
     
-    # Add metadata to distinguish document types as required by project guide
     for doc in documents:
         doc.metadata["doc_type"] = doc_type
 
@@ -40,28 +40,29 @@ vector_store = Chroma(
 )
 
 def ingest_data():
-    # Load and ingest company policy / handbook
     policy_chunks = process_pdf("./handbook.pdf", doc_type="policy")
-    
-    # Load and ingest job description (treated as policy/JD context)
     jd_chunks = process_pdf("./job_description.pdf", doc_type="policy")
-    
-    # Load and ingest resume
     resume_chunks = process_pdf("./resume.pdf", doc_type="resume")
     
-    vector_store.add_documents(policy_chunks + jd_chunks + resume_chunks)
-    
-    return "Data ingestion completed with metadata tags."
+    total_chunks = policy_chunks + jd_chunks + resume_chunks
+    if total_chunks:
+        vector_store.add_documents(total_chunks)
+        return "Data ingestion completed successfully with metadata tags."
+    return "Error: No documents found to ingest. Please ensure handbook.pdf, job_description.pdf, and resume.pdf are in the root folder."
 
 def reg_chain(query: str, doc_type_filter: str = None):
     llm = create_llm()
     
-    # Filter retriever by metadata if specified (policy vs resume)
-    search_kwargs = {"k": 3}
+    search_kwargs = {"k": 4}
     if doc_type_filter:
         search_kwargs["filter"] = {"doc_type": doc_type_filter}
         
     retriever = vector_store.as_retriever(search_kwargs=search_kwargs)
+
+    # Check if retriever finds relevant documents
+    docs = retriever.invoke(query)
+    if not docs:
+        return "I couldn't find any relevant information in the company documents regarding your query."
 
     chain = RetrievalQA.from_chain_type(
         llm=llm,
@@ -74,8 +75,3 @@ def reg_chain(query: str, doc_type_filter: str = None):
 if __name__ == "__main__":
     # Uncomment to ingest data initially:
     print(ingest_data())
-
-    query = input("Enter your query: ")
-    # You can pass doc_type_filter="policy" or doc_type_filter="resume" if needed
-    response = reg_chain(query)
-    print("\n\nCLEAN RESPONSE:\n", response)

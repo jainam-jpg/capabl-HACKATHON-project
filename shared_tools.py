@@ -30,15 +30,8 @@ MOCK_CALENDAR = {
 @tool
 def lookup_interview_slots(start_date: str, end_date: str = None) -> str:
     """
-    Looks up available interview time slots or counts scheduled interviews across 
-    a single date or a range of dates (in YYYY-MM-DD format).
-    
-    Inputs:
-    - start_date (str): The primary date or start of date range in YYYY-MM-DD format (e.g., '2026-10-11').
-    - end_date (str, optional): The end date of range in YYYY-MM-DD format (e.g., '2026-10-17').
-    
-    Returns:
-    Detailed listing of available interview slots and total counts for the requested timeframe.
+    Looks up available interview time slots, counts scheduled interviews, or analyzes 
+    schedule patterns across a single date or date range (in YYYY-MM-DD format).
     """
     if not end_date:
         end_date = start_date
@@ -47,10 +40,11 @@ def lookup_interview_slots(start_date: str, end_date: str = None) -> str:
         start_dt = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
         end_dt = datetime.datetime.strptime(end_date, "%Y-%m-%d").date()
     except ValueError:
-        return "Error: Dates must be provided in YYYY-MM-DD format (e.g., 2026-10-15)."
+        return "Error: Dates must be in YYYY-MM-DD format (e.g., 2026-10-15)."
 
     results = {}
     total_slots = 0
+    active_days = 0
 
     curr_dt = start_dt
     while curr_dt <= end_dt:
@@ -59,6 +53,7 @@ def lookup_interview_slots(start_date: str, end_date: str = None) -> str:
         if slots:
             results[date_str] = slots
             total_slots += len(slots)
+            active_days += 1
         else:
             results[date_str] = "No slots available"
         curr_dt += datetime.timedelta(days=1)
@@ -66,26 +61,28 @@ def lookup_interview_slots(start_date: str, end_date: str = None) -> str:
     summary = {
         "timeframe": f"{start_date} to {end_date}",
         "total_available_slots": total_slots,
+        "days_with_interviews": active_days,
         "daily_breakdown": results
     }
     return json.dumps(summary, indent=2)
 
 
 @tool
-def match_resume_to_jd() -> str:
+def match_resume_to_jd(query: str = "full comparison") -> str:
     """
     Retrieves candidate resume chunks and job description chunks from the vector store 
-    and returns a structured comparison showing matched skills and missing skills.
+    to answer specific screening questions or perform tailored skill evaluations.
     """
-    resume_docs = vector_store.similarity_search("skills experience", k=4, filter={"doc_type": "resume"})
+    resume_docs = vector_store.similarity_search("skills experience education project", k=5, filter={"doc_type": "resume"})
     resume_text = "\n".join([doc.page_content for doc in resume_docs])
     
-    jd_docs = vector_store.similarity_search("requirements responsibilities skills", k=4, filter={"doc_type": "policy"})
+    jd_docs = vector_store.similarity_search("requirements responsibilities skills qualifications", k=5, filter={"doc_type": "policy"})
     jd_text = "\n".join([doc.page_content for doc in jd_docs])
     
     structured_data = {
+        "user_specific_question": query,
         "candidate_resume_summary": resume_text if resume_text else "No resume chunks found.",
         "job_description_requirements": jd_text if jd_text else "No job description chunks found.",
-        "instruction": "Please analyze the above resume summary against the job description requirements and provide a structured comparison detailing matched skills and missing skills."
+        "instruction": f"Evaluate the retrieved resume against the job description to directly answer the user's specific question: '{query}'. Provide targeted answers without forcing unrequested formats."
     }
     return json.dumps(structured_data, indent=2)
